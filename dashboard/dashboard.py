@@ -4,6 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
+import os
 
 # Konfigurasi halaman
 st.set_page_config(
@@ -19,7 +20,10 @@ st.markdown("Analisis Pola Penyewaan Sepeda Berdasarkan Waktu, Cuaca, dan Musim"
 # Load data
 @st.cache_data
 def load_data():
-    df = pd.read_csv('main_data.csv')
+    # Get the directory of the current file
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    data_path = os.path.join(current_dir, 'main_data.csv')
+    df = pd.read_csv(data_path)
     df['dteday'] = pd.to_datetime(df['dteday'])
     return df
 
