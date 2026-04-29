@@ -27,7 +27,30 @@ def load_data():
     df['dteday'] = pd.to_datetime(df['dteday'])
     return df
 
+@st.cache_data
+def load_hour_data():
+    # Load hour data for hourly analysis
+    import pandas as pd
+    from pathlib import Path
+    
+    # Try to load from dashboard folder first, then from parent
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.dirname(current_dir)
+    
+    hour_path = os.path.join(current_dir, 'hour_data.csv')
+    if not os.path.exists(hour_path):
+        hour_path = os.path.join(parent_dir, 'data', 'hour.csv')
+    
+    hour_df = pd.read_csv(hour_path)
+    hour_df['dteday'] = pd.to_datetime(hour_df['dteday'])
+    
+    # Map workingday to labels
+    hour_df['day_type'] = hour_df['workingday'].map({1: 'Hari Kerja', 0: 'Akhir Pekan'})
+    
+    return hour_df
+
 df = load_data()
+hour_df = load_hour_data()
 
 # Sidebar filters
 st.sidebar.header("🔍 Filter Data")
@@ -123,6 +146,90 @@ ax.grid(True, alpha=0.3)
 for i, v in enumerate(monthly_data['cnt']):
     ax.text(monthly_data['month'][i], v + 50, f'{int(v):,}', ha='center', fontsize=9)
 st.pyplot(fig)
+
+# Visualisasi 4: Pola Penggunaan per Jam - Hari Kerja vs Akhir Pekan
+st.subheader("⏰ Pola Penggunaan Berdasarkan Jam - Hari Kerja vs Akhir Pekan")
+st.markdown("Analisis perbedaan pola penyewaan sepeda pada hari kerja dan akhir pekan selama periode 2011-2012")
+
+col1, col2 = st.columns([2, 1])
+
+with col1:
+    fig, ax = plt.subplots(figsize=(14, 6))
+    
+    # Agregasi per jam dan tipe hari
+    hourly_pattern = hour_df.groupby(['hr', 'day_type'])['cnt'].mean().reset_index()
+    
+    # Plot data
+    weekday_data = hourly_pattern[hourly_pattern['day_type'] == 'Hari Kerja']
+    weekend_data = hourly_pattern[hourly_pattern['day_type'] == 'Akhir Pekan']
+    
+    ax.plot(weekday_data['hr'], weekday_data['cnt'], 
+           marker='o', linewidth=2.5, markersize=6, label='Hari Kerja', color='#FF6B6B')
+    ax.plot(weekend_data['hr'], weekend_data['cnt'], 
+           marker='s', linewidth=2.5, markersize=6, label='Akhir Pekan', color='#4ECDC4')
+    
+    # Highlight peak hours
+    max_weekday_idx = weekday_data['cnt'].idxmax()
+    max_weekday_hr = weekday_data.loc[max_weekday_idx, 'hr']
+    max_weekday_val = weekday_data.loc[max_weekday_idx, 'cnt']
+    
+    max_weekend_idx = weekend_data['cnt'].idxmax()
+    max_weekend_hr = weekend_data.loc[max_weekend_idx, 'hr']
+    max_weekend_val = weekend_data.loc[max_weekend_idx, 'cnt']
+    
+    # Annotate peaks
+    ax.scatter([max_weekday_hr], [max_weekday_val], s=200, color='red', zorder=5, marker='*')
+    ax.annotate(f'Puncak: {int(max_weekday_val)} (jam {int(max_weekday_hr)}:00)', 
+               xy=(max_weekday_hr, max_weekday_val),
+               xytext=(max_weekday_hr-2, max_weekday_val+50),
+               arrowprops=dict(arrowstyle='->', color='red', lw=1.5),
+               fontsize=10, fontweight='bold', color='red')
+    
+    ax.scatter([max_weekend_hr], [max_weekend_val], s=200, color='blue', zorder=5, marker='*')
+    ax.annotate(f'Puncak: {int(max_weekend_val)} (jam {int(max_weekend_hr)}:00)', 
+               xy=(max_weekend_hr, max_weekend_val),
+               xytext=(max_weekend_hr+1, max_weekend_val-80),
+               arrowprops=dict(arrowstyle='->', color='blue', lw=1.5),
+               fontsize=10, fontweight='bold', color='blue')
+    
+    # Add shaded regions for peak hours
+    ax.axvspan(7, 9, alpha=0.15, color='orange', label='Jam Sibuk Pagi')
+    ax.axvspan(17, 19, alpha=0.15, color='purple', label='Jam Sibuk Sore')
+    
+    ax.set_title('Pola Penyewaan Sepeda per Jam: Hari Kerja vs Akhir Pekan (2011-2012)', 
+                fontsize=12, fontweight='bold')
+    ax.set_xlabel('Jam (0-23)', fontsize=11)
+    ax.set_ylabel('Rata-rata Jumlah Penyewaan', fontsize=11)
+    ax.set_xticks(range(0, 24, 2))
+    ax.grid(True, alpha=0.3, linestyle='--')
+    ax.legend(loc='upper left', fontsize=10)
+    
+    st.pyplot(fig)
+
+with col2:
+    # Statistik perbandingan
+    st.markdown("### 📊 Statistik Perbandingan")
+    
+    weekday_stats = hour_df[hour_df['workingday'] == 1]['cnt'].describe()
+    weekend_stats = hour_df[hour_df['workingday'] == 0]['cnt'].describe()
+    
+    col_a, col_b = st.columns(2)
+    
+    with col_a:
+        st.metric("Hari Kerja - Rata-rata", f"{weekday_stats['mean']:.0f}")
+        st.metric("Hari Kerja - Maksimum", f"{int(weekday_stats['max'])}")
+    
+    with col_b:
+        st.metric("Akhir Pekan - Rata-rata", f"{weekend_stats['mean']:.0f}")
+        st.metric("Akhir Pekan - Maksimum", f"{int(weekend_stats['max'])}")
+
+# Detail informasi
+st.info("""
+**Interpretasi Pola:**
+- **Hari Kerja**: Menunjukkan pola **commuter** dengan 2 puncak (pagi ~jam 8 dan sore ~jam 17-18)
+- **Akhir Pekan**: Menunjukkan pola **rekreasi** dengan puncak tunggal di siang hari (~jam 12-14)
+- Periode 2011-2012 menunjukkan pertumbuhan konsisten di kedua tipe hari
+""")
 
 # Footer
 st.markdown("---")
